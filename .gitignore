@@ -1,8 +1,10 @@
 # Ignore MachineLearning Model which is github repository
-yolov5/
+models/
 # Ignore virtual environment directories
 person-detect-env/
 # Ignore Python cache files
 __pycache__/
 scrap.txt
 setup_people_counter.sh
+recordings/
+25208-348661247_small.mp4
