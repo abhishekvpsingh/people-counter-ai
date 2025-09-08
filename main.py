@@ -9,19 +9,15 @@ Features:
 - YOLOv8 params: model path, imgsz, conf, iou, max_det
 - Posture classification + debouncer (compatible with process/update/__call__)
 - FPS smoothing + overlay
-- **NEW**: On‑frame semi‑transparent panel showing People / Standing / Sitting
-- Keyboard: 'q' to quit
-
-Also includes a camera probe utility: --probe (tests indices/backends quickly).
+- On‑frame semi‑transparent panel showing People / Standing / Sitting
+- Keyboard: press 'q' or 'Q' or ESC to quit; closing the window also exits
+- Probe utility: --probe (tests indices/backends quickly)
 """
 
 import argparse
-import sys
-import time
 from typing import List, Tuple, Optional
 
 import cv2
-import numpy as np
 
 # Prefer utils.* layout; fall back to top-level files if needed
 try:
@@ -174,62 +170,72 @@ def main(argv=None):
               "or set --backend avfoundation on macOS.")
         return 3
 
-    window_name = "People Counter + Posture (q to quit)"
+    window_name = "People Counter + Posture  —  Press Q/ESC to quit"
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
 
-    last_warn = ""
-    while True:
-        ok, frame_bgr = cap.read()
-        if not ok or frame_bgr is None:
-            last_warn = "End of stream or read failure."
-            print("[WARN]", last_warn)
-            break
+    try:
+        while True:
+            # If the user clicked the window's close button, exit cleanly
+            if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
+                break
 
-        # Detect people
-        try:
-            boxes = detect_people(model, frame_bgr, imgsz=args.imgsz, conf=args.conf,
-                                  iou=args.iou, max_det=int(args.max_det))
-        except Exception as e:
-            boxes = []
-            last_warn = f"detect_people error: {e}"
+            ok, frame_bgr = cap.read()
+            if not ok or frame_bgr is None:
+                print("[WARN] End of stream or read failure.")
+                break
 
-        # Posture
-        if not args.no_posture and boxes:
-            raw_labels: List[str] = []
-            for xyxy in boxes:
-                try:
-                    raw_labels.append(detect_posture(frame_bgr, xyxy))
-                except Exception as e:
-                    raw_labels.append("unknown")
-                    last_warn = f"detect_posture error: {e}"
-        else:
-            raw_labels = ["person"] * len(boxes)
+            # Detect people
+            try:
+                boxes = detect_people(model, frame_bgr, imgsz=args.imgsz, conf=args.conf,
+                                      iou=args.iou, max_det=int(args.max_det))
+            except Exception as e:
+                boxes = []
+                # Optionally print once; keep loop going
+                # print(f"[WARN] detect_people error: {e}")
 
-        # Debounce
-        labels = call_debouncer_compat(debouncer, boxes, raw_labels) if not args.no_posture else raw_labels
+            # Posture
+            if not args.no_posture and boxes:
+                raw_labels: List[str] = []
+                for xyxy in boxes:
+                    try:
+                        raw_labels.append(detect_posture(frame_bgr, xyxy))
+                    except Exception:
+                        raw_labels.append("unknown")
+            else:
+                raw_labels = ["person"] * len(boxes)
 
-        # Counts
-        num_people = len(boxes)
-        num_stand = sum(1 for l in labels if l == "standing")
-        num_sit = sum(1 for l in labels if l == "sitting")
+            # Debounce
+            labels = call_debouncer_compat(debouncer, boxes, raw_labels) if not args.no_posture else raw_labels
 
-        # Draw detections, FPS, and **counts panel (on top; not covered)**
-        draw_boxes_and_labels(frame_bgr, boxes, labels)
-        fps = fps_sm.tick()
-        draw_fps(frame_bgr, fps)
-        draw_panel(frame_bgr, [
-            f"People:   {num_people}",
-            f"Standing: {num_stand}",
-            f"Sitting:  {num_sit}",
-        ], topleft=(8, 8))
+            # Counts
+            num_people = len(boxes)
+            num_stand = sum(1 for l in labels if l == "standing")
+            num_sit = sum(1 for l in labels if l == "sitting")
 
-        cv2.imshow(window_name, frame_bgr)
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord('q'):
-            break
+            # Draw
+            draw_boxes_and_labels(frame_bgr, boxes, labels)
+            fps = fps_sm.tick()
+            draw_fps(frame_bgr, fps)
+            draw_panel(frame_bgr, [
+                f"People:   {num_people}",
+                f"Standing: {num_stand}",
+                f"Sitting:  {num_sit}",
+            ], topleft=(8, 8))
 
-    cap.release()
-    cv2.destroyAllWindows()
+            cv2.imshow(window_name, frame_bgr)
+
+            # Handle quit keys robustly (q / Q / ESC)
+            key = cv2.waitKey(1) & 0xFF
+            if key in (ord('q'), ord('Q'), 27):  # 27 = ESC
+                break
+
+    except KeyboardInterrupt:
+        # Allow Ctrl+C to exit cleanly from terminal
+        pass
+    finally:
+        cap.release()
+        cv2.destroyAllWindows()
+
     return 0
 
 
