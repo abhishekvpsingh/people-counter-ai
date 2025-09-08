@@ -32,7 +32,7 @@ A small project that detects people in a video stream and classifies posture (st
 
 ### 1) Clone the project
 ```bash
-git clone <your-repo-url> people-counter-ai
+git clone <https://github.com/abhishekvpsingh/people-counter-ai.git> people-counter-ai
 cd people-counter-ai
 ```
 
